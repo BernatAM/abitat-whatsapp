@@ -31,6 +31,10 @@ class WebhookResponse(BaseModel):
     messages_sent: list[str]
 
 
+class MetaWebhookVerificationResponse(BaseModel):
+    detail: str
+
+
 class JobsRunRequest(BaseModel):
     mode: str = Field(default="due", description="due o all")
 
@@ -54,4 +58,3 @@ class DebugJobsResponse(BaseModel):
 class DebugActionResponse(BaseModel):
     ok: bool = True
     detail: str
-

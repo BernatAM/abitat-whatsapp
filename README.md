@@ -1,38 +1,45 @@
 # Abitat WhatsApp Demo Mock
 
-Demo backend en `FastAPI` para simular un flujo conversacional de WhatsApp orientado a venta de tóner y recogida de cartuchos vacíos.
+Backend en FastAPI para un flujo conversacional de WhatsApp orientado a venta de toner y recogida de cartuchos vacios.
 
-No usa base de datos, Redis ni colas. Todo el estado se guarda en memoria por teléfono.
+No usa base de datos, Redis ni colas. Todo el estado se guarda en memoria por telefono.
+
+Puede funcionar de dos formas:
+
+- modo demo local usando `POST /demo/message`
+- modo real con `WhatsApp Cloud API` de Meta usando webhook y envio saliente por Graph API
 
 ## Estructura
 
 ```text
 .
-├── app
-│   ├── domain
-│   │   ├── models.py
-│   │   └── schemas.py
-│   ├── integrations
-│   │   ├── email.py
-│   │   └── sage.py
-│   ├── repositories
-│   │   └── memory.py
-│   ├── routers
-│   │   ├── debug.py
-│   │   ├── demo.py
-│   │   ├── health.py
-│   │   └── webhook.py
-│   ├── services
-│   │   ├── container.py
-│   │   ├── conversation.py
-│   │   └── jobs.py
-│   ├── utils
-│   │   └── parsing.py
-│   └── main.py
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
+|-- app
+|   |-- domain
+|   |   |-- models.py
+|   |   `-- schemas.py
+|   |-- integrations
+|   |   |-- email.py
+|   |   |-- sage.py
+|   |   `-- whatsapp.py
+|   |-- repositories
+|   |   `-- memory.py
+|   |-- routers
+|   |   |-- debug.py
+|   |   |-- demo.py
+|   |   |-- health.py
+|   |   `-- webhook.py
+|   |-- services
+|   |   |-- config.py
+|   |   |-- container.py
+|   |   |-- conversation.py
+|   |   `-- jobs.py
+|   |-- utils
+|   |   `-- parsing.py
+|   `-- main.py
+|-- Dockerfile
+|-- docker-compose.yml
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Arranque
@@ -49,7 +56,7 @@ La API queda disponible en `http://localhost:8000`.
 
 ```bash
 python -m venv .venv
-. .venv/bin/activate
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
@@ -63,10 +70,35 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
+## Variables de entorno para WhatsApp real
+
+Necesitas estas variables para integrar con Meta:
+
+- `WHATSAPP_VERIFY_TOKEN`
+- `WHATSAPP_ACCESS_TOKEN`
+- `WHATSAPP_PHONE_NUMBER_ID`
+- opcional: `WHATSAPP_GRAPH_VERSION` con valor por defecto `v23.0`
+
+Ejemplo:
+
+```env
+WHATSAPP_VERIFY_TOKEN=un_token_largo_y_privado
+WHATSAPP_ACCESS_TOKEN=EAAG...
+WHATSAPP_PHONE_NUMBER_ID=123456789012345
+WHATSAPP_GRAPH_VERSION=v23.0
+```
+
+Con Docker Compose:
+
+```bash
+docker compose --env-file .env up --build
+```
+
 ## Endpoints
 
 - `GET /health`
 - `POST /demo/message`
+- `GET /webhook/whatsapp`
 - `POST /webhook/whatsapp`
 - `GET /debug/conversations`
 - `GET /debug/conversations/{phone}`
@@ -76,7 +108,7 @@ uvicorn app.main:app --reload
 - `POST /debug/sage/{phone}/exists`
 - `POST /debug/sage/{phone}/new`
 
-## Formato demo simplificado
+## Demo local
 
 ### Enviar mensaje
 
@@ -101,7 +133,7 @@ curl -X POST http://localhost:8000/demo/message \
 }
 ```
 
-## Formato webhook WhatsApp simulado
+## Webhook simulado
 
 ```bash
 curl -X POST http://localhost:8000/webhook/whatsapp \
@@ -109,76 +141,103 @@ curl -X POST http://localhost:8000/webhook/whatsapp \
   -d '{
     "message": {
       "from": "+34600000000",
-      "text": "Sí"
+      "text": "Si"
     }
   }'
 ```
 
-## Conversación de ejemplo
+## Configuracion con Meta Cloud API real
 
-### Camino cliente existente con recogida
+### 1. Configura el webhook en Meta
 
-Teléfono par, por ejemplo `+34600000000`, devuelve cliente existente en el mock de SAGE.
+En Meta for Developers, configura:
+
+- Callback URL: `https://tu-dominio.com/webhook/whatsapp`
+- Verify Token: el mismo valor de `WHATSAPP_VERIFY_TOKEN`
+
+La verificacion de Meta llega por `GET /webhook/whatsapp` con `hub.mode`, `hub.verify_token` y `hub.challenge`. Si el token coincide, la API devuelve el challenge.
+
+### 2. Suscribe eventos
+
+En el producto WhatsApp de Meta suscribe al menos el campo `messages`.
+
+### 3. Configura credenciales de salida
+
+- `WHATSAPP_ACCESS_TOKEN`: token de acceso de Meta
+- `WHATSAPP_PHONE_NUMBER_ID`: identificador del numero emisor
+
+### 4. Funcionamiento
+
+Cuando Meta envia un mensaje de texto entrante al webhook:
+
+- se extrae el telefono del cliente
+- se procesa el flujo conversacional
+- se guarda el estado en memoria
+- cada respuesta generada se envia de vuelta por Graph API
+
+### 5. Importante sobre la ventana de 24 horas
+
+Las respuestas de texto libre funcionan dentro de la ventana de servicio al cliente de WhatsApp. Para contactar fuera de esa ventana tendras que usar plantillas aprobadas por Meta.
+
+## Conversacion de ejemplo
+
+### Cliente existente con recogida
 
 ```bash
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Hola"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Sí"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"HP LaserJet Pro M404dn"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Ecológico Ábitat"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Ecologico Abitat"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"3"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Sí"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"2"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Original"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Martes por la mañana"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Martes por la manana"}'
 ```
 
-### Camino cliente nuevo con presupuesto y recogida
-
-Teléfono impar, por ejemplo `+34600000001`, devuelve cliente nuevo en el mock de SAGE.
+### Cliente nuevo con presupuesto y recogida
 
 ```bash
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Hola"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Sí necesito"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Si necesito"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Brother HL-L2375DW"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Compatible"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"4"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Calle Mayor 10, Madrid compras@cliente.es"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Sí"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Si"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"6"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Compatible"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Jueves 16:00 a 18:00"}'
 ```
 
-### Camino no necesito ahora
+### No necesito ahora
 
 ```bash
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000003","text":"Hola"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000003","text":"Más adelante"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000003","text":"Mas adelante"}'
 ```
-
-Esto crea un job de reminder a 45 días.
 
 ## Debug y testing
 
-### Ver todas las conversaciones
+### Ver conversaciones
 
 ```bash
 curl http://localhost:8000/debug/conversations
 ```
 
-### Ver una conversación
+### Ver una conversacion
 
 ```bash
 curl http://localhost:8000/debug/conversations/+34600000000
 ```
 
-### Resetear una conversación
+### Resetear una conversacion
 
 ```bash
 curl -X POST http://localhost:8000/debug/conversations/+34600000000/reset
 ```
 
-### Ver jobs programados
+### Ver jobs
 
 ```bash
 curl http://localhost:8000/debug/jobs
@@ -200,25 +259,16 @@ curl -X POST http://localhost:8000/debug/jobs/run \
   -d '{"mode":"all"}'
 ```
 
-Al ejecutar un reminder, el envío de email se simula en logs.
-
 ### Forzar resultado del mock SAGE
-
-#### Forzar cliente existente
 
 ```bash
 curl -X POST http://localhost:8000/debug/sage/+34600000999/exists
-```
-
-#### Forzar cliente nuevo
-
-```bash
 curl -X POST http://localhost:8000/debug/sage/+34600000999/new
 ```
 
 ## Estado en memoria
 
-Cada conversación guarda:
+Cada conversacion guarda:
 
 - `phone`
 - `current_state`
@@ -237,10 +287,11 @@ Cada conversación guarda:
 - `created_at`
 - `updated_at`
 
-## Notas de implementación
+## Notas
 
-- Una conversación por teléfono.
+- Una conversacion por telefono.
 - Estado guardado en diccionarios y listas en memoria.
 - Historial con `timestamp`, `direction`, `text`, `state_before`, `state_after`.
 - Logs por mensaje recibido, transiciones, tags, resultado SAGE y jobs.
-- No hay persistencia: al reiniciar el contenedor se pierde el estado, que es justo el comportamiento esperado para la demo.
+- El webhook soporta payload simulado y payload real de Meta para mensajes de texto.
+- No hay persistencia. Al reiniciar el contenedor se pierde el estado, que es el comportamiento esperado para la demo.
