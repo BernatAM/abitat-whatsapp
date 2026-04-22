@@ -56,7 +56,6 @@ Recomendacion para Supabase:
 |   |   `-- schemas.py
 |   |-- integrations
 |   |   |-- email.py
-|   |   |-- sage.py
 |   |   `-- whatsapp.py
 |   |-- repositories
 |   |   `-- memory.py
@@ -146,8 +145,6 @@ docker compose --env-file .env up --build
 - `POST /debug/conversations/{phone}/reset`
 - `GET /debug/jobs`
 - `POST /debug/jobs/run`
-- `POST /debug/sage/{phone}/exists`
-- `POST /debug/sage/{phone}/new`
 
 ## Demo local
 
@@ -227,7 +224,8 @@ Las respuestas de texto libre funcionan dentro de la ventana de servicio al clie
 ```bash
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Hola"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"HP LaserJet Pro M404dn"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"HP"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"LaserJet Pro M404dn"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Ecologico Abitat"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"3"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
@@ -241,7 +239,8 @@ curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/js
 ```bash
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Hola"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Si necesito"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Brother HL-L2375DW"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Brother"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"HL-L2375DW"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Compatible"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"4"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Calle Mayor 10, Madrid compras@cliente.es"}'
@@ -300,13 +299,6 @@ curl -X POST http://localhost:8000/debug/jobs/run \
   -d '{"mode":"all"}'
 ```
 
-### Forzar resultado del mock SAGE
-
-```bash
-curl -X POST http://localhost:8000/debug/sage/+34600000999/exists
-curl -X POST http://localhost:8000/debug/sage/+34600000999/new
-```
-
 ## Estado en memoria
 
 Cada conversacion guarda:
@@ -314,6 +306,8 @@ Cada conversacion guarda:
 - `phone`
 - `current_state`
 - `tags`
+- `printer_brand`
+- `printer_model`
 - `printer_raw`
 - `toner_type`
 - `toner_units`
@@ -334,6 +328,6 @@ Cada conversacion guarda:
 - Estado productivo guardado en Supabase si `SUPABASE_URL` y `SUPABASE_KEY` estan configuradas.
 - Fallback en memoria solo para desarrollo local.
 - Historial con `timestamp`, `direction`, `text`, `state_before`, `state_after`.
-- Logs por mensaje recibido, transiciones, tags, resultado SAGE y jobs.
+- Logs por mensaje recibido, transiciones, tags, verificacion de cliente en base de datos y jobs.
 - El webhook soporta payload simulado y payload real de Meta para mensajes de texto.
 - Idempotencia basica para mensajes entrantes reales usando `processed_events`.

@@ -6,6 +6,8 @@ from app.domain.models import ConversationState, ScheduledJob
 class InMemoryConversationRepository:
     def __init__(self) -> None:
         self.conversations_by_phone: dict[str, ConversationState] = {}
+        self.existing_customer_phones: set[str] = set()
+        self.toner_orders_by_phone: dict[str, dict] = {}
 
     def get(self, phone: str) -> ConversationState | None:
         return self.conversations_by_phone.get(phone)
@@ -32,6 +34,42 @@ class InMemoryConversationRepository:
             self.conversations_by_phone.values(),
             key=lambda item: item.updated_at,
             reverse=True,
+        )
+
+    def customer_exists(self, phone: str) -> bool:
+        return phone in self.existing_customer_phones
+
+    def mark_customer_exists(self, phone: str) -> None:
+        self.existing_customer_phones.add(phone)
+
+    def upsert_toner_order(self, conversation: ConversationState) -> None:
+        if not self._has_order_data(conversation):
+            return
+        self.toner_orders_by_phone[conversation.phone] = {
+            "phone": conversation.phone,
+            "printer_brand": conversation.printer_brand,
+            "printer_model": conversation.printer_model,
+            "printer_raw": conversation.printer_raw,
+            "toner_type": conversation.toner_type,
+            "toner_units": conversation.toner_units,
+            "customer_exists": conversation.sage_customer_exists,
+            "delivery_address": conversation.delivery_address,
+            "budget_email": conversation.budget_email,
+            "status": conversation.current_state,
+            "empty_pickup_requested": conversation.empty_pickup_requested,
+            "empty_units": conversation.empty_units,
+            "empty_type": conversation.empty_type,
+            "pickup_slot_text": conversation.pickup_slot_text,
+        }
+
+    def _has_order_data(self, conversation: ConversationState) -> bool:
+        return any(
+            [
+                conversation.toner_units,
+                conversation.empty_pickup_requested,
+                conversation.empty_units,
+                conversation.pickup_slot_text,
+            ]
         )
 
 

@@ -96,8 +96,10 @@ class SupabaseConversationRepository:
         if existing is not None:
             return existing, False
 
-        contact = self._ensure_contact(phone)
-        self._ensure_flow(contact["id"])
+        existing_contact = self._get_contact(phone)
+        contact_existed_before_flow = existing_contact is not None
+        contact = existing_contact or self._ensure_contact(phone)
+        self._ensure_flow(contact["id"], contact_existed_before_flow=contact_existed_before_flow)
         conversation = self.get(phone)
         if conversation is None:
             raise RuntimeError(f"Failed to create Supabase conversation phone={phone}")
@@ -107,7 +109,7 @@ class SupabaseConversationRepository:
     def save(self, conversation: ConversationState) -> ConversationState:
         contact = self._ensure_contact(conversation.phone)
         conversation.contact_id = contact["id"]
-        self._ensure_flow(contact["id"])
+        self._ensure_flow(contact["id"], contact_existed_before_flow=True)
         self._update_flow(contact["id"], conversation)
         self._update_contact(contact["id"], conversation)
         self._persist_tags(contact["id"], conversation.tags)
@@ -126,6 +128,8 @@ class SupabaseConversationRepository:
                 "current_state": "awaiting_need_now",
                 "is_closed": False,
                 "printer_raw": None,
+                "printer_brand": None,
+                "printer_model": None,
                 "toner_type": None,
                 "toner_units": None,
                 "sage_customer_exists": None,
@@ -203,14 +207,18 @@ class SupabaseConversationRepository:
         )
         return rows[0] if rows else None
 
-    def _ensure_flow(self, contact_id: int) -> dict[str, Any]:
+    def _ensure_flow(self, contact_id: int, contact_existed_before_flow: bool) -> dict[str, Any]:
         flow = self._get_flow(contact_id)
         if flow is not None:
             return flow
         try:
             rows = self.client.post(
                 "contact_flow_state",
-                {"contact_id": contact_id, "current_state": "awaiting_need_now"},
+                {
+                    "contact_id": contact_id,
+                    "current_state": "awaiting_need_now",
+                    "customer_existed_before_flow": contact_existed_before_flow,
+                },
             )
             return rows[0]
         except SupabaseRestError:
@@ -226,6 +234,8 @@ class SupabaseConversationRepository:
                 "current_state": self._db_state(conversation.current_state),
                 "is_closed": conversation.current_state.startswith("closed_"),
                 "printer_raw": conversation.printer_raw,
+                "printer_brand": conversation.printer_brand,
+                "printer_model": conversation.printer_model,
                 "toner_type": conversation.toner_type,
                 "toner_units": conversation.toner_units,
                 "sage_customer_exists": conversation.sage_customer_exists,
@@ -262,6 +272,8 @@ class SupabaseConversationRepository:
             contact_id=contact_id,
             current_state=current_state,
             tags=tags,
+            printer_brand=flow.get("printer_brand"),
+            printer_model=flow.get("printer_model"),
             printer_raw=flow.get("printer_raw"),
             toner_type=flow.get("toner_type"),
             toner_units=flow.get("toner_units"),
@@ -362,6 +374,82 @@ class SupabaseConversationRepository:
                 if item.wa_message_id and "duplicate key" in str(exc):
                     continue
                 raise
+
+    def customer_exists(self, phone: str) -> bool:
+        contact = self._get_contact(phone)
+        if contact is None:
+            return False
+        flow = self._get_flow(contact["id"])
+        if flow is None:
+            return True
+        if contact.get("email") or contact.get("default_address"):
+            return True
+        return bool(flow.get("customer_existed_before_flow"))
+
+    def upsert_toner_order(self, conversation: ConversationState) -> None:
+        if conversation.contact_id is None or not self._has_order_data(conversation):
+            return
+        active_order = self._get_active_order(conversation.contact_id)
+        payload = {
+            "contact_id": conversation.contact_id,
+            "phone": conversation.phone,
+            "printer_brand": conversation.printer_brand,
+            "printer_model": conversation.printer_model,
+            "printer_raw": conversation.printer_raw,
+            "toner_type": conversation.toner_type,
+            "toner_units": conversation.toner_units,
+            "customer_exists": conversation.sage_customer_exists,
+            "delivery_address": conversation.delivery_address,
+            "budget_email": conversation.budget_email,
+            "status": self._order_status(conversation),
+            "empty_pickup_requested": conversation.empty_pickup_requested,
+            "empty_units": conversation.empty_units,
+            "empty_type": conversation.empty_type,
+            "pickup_slot_text": conversation.pickup_slot_text,
+        }
+        if active_order:
+            self.client.patch(
+                "toner_orders",
+                payload,
+                {"id": f"eq.{active_order['id']}"},
+                prefer="return=minimal",
+            )
+            return
+        self.client.post("toner_orders", payload, prefer="return=minimal")
+
+    def _get_active_order(self, contact_id: int) -> dict[str, Any] | None:
+        rows = self.client.get(
+            "toner_orders",
+            {
+                "contact_id": f"eq.{contact_id}",
+                "status": "in.(draft,pending_budget,confirmed,pickup_requested)",
+                "select": "*",
+                "order": "updated_at.desc",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    def _has_order_data(self, conversation: ConversationState) -> bool:
+        return any(
+            [
+                conversation.toner_units,
+                conversation.empty_pickup_requested,
+                conversation.empty_units,
+                conversation.pickup_slot_text,
+            ]
+        )
+
+    def _order_status(self, conversation: ConversationState) -> str:
+        if conversation.current_state.startswith("closed_"):
+            return "closed"
+        if conversation.sage_customer_exists is False:
+            return "pending_budget"
+        if conversation.empty_pickup_requested:
+            return "pickup_requested"
+        if conversation.toner_units:
+            return "confirmed"
+        return "draft"
 
     def _db_state(self, state: str) -> str:
         return "awaiting_need_now" if state == "new" else state

@@ -12,6 +12,7 @@ YES_WORDS = {
     "si necesito",
     "sí necesito",
     "por supuesto",
+    "yes",
 }
 NO_WORDS = {
     "no",
@@ -21,6 +22,7 @@ NO_WORDS = {
     "más adelante",
     "todavia no",
     "todavía no",
+    "no",
 }
 
 TONER_TYPE_MAP = {
@@ -63,6 +65,8 @@ def normalize_key(text: str) -> str:
 
 def normalize_yes_no(text: str) -> str | None:
     value = normalize_key(text)
+    if value == "yes":
+        return "yes"
     if value in YES_WORDS:
         return "yes"
     if value in NO_WORDS:
@@ -99,4 +103,3 @@ def strip_email_from_text(text: str, email: str | None) -> str:
     if not email:
         return normalize_whitespace(text)
     return normalize_whitespace(text.replace(email, " "))
-

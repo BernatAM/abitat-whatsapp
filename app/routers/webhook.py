@@ -75,7 +75,7 @@ async def whatsapp_webhook(request: Request) -> WebhookResponse:
         all_replies.extend(replies)
         for reply in replies:
             try:
-                whatsapp_client.send_text_message(to_phone=incoming.phone, text=reply)
+                whatsapp_client.send_message(to_phone=incoming.phone, text=reply)
             except RuntimeError as exc:
                 logger.error("Failed to send WhatsApp reply phone=%s error=%s", incoming.phone, exc)
 

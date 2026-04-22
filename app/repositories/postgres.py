@@ -41,6 +41,9 @@ class PostgresConversationRepository:
                     c.created_at as contact_created_at,
                     c.updated_at as contact_updated_at,
                     s.current_state,
+                    s.customer_existed_before_flow,
+                    s.printer_brand,
+                    s.printer_model,
                     s.printer_raw,
                     s.toner_type,
                     s.toner_units,
@@ -70,6 +73,11 @@ class PostgresConversationRepository:
 
         with self.pool.connection() as conn:
             with conn.transaction():
+                existing_contact = conn.execute(
+                    "select id from contacts where phone = %s",
+                    (phone,),
+                ).fetchone()
+                contact_existed_before_flow = existing_contact is not None
                 contact = conn.execute(
                     """
                     insert into contacts (phone)
@@ -81,11 +89,15 @@ class PostgresConversationRepository:
                 ).fetchone()
                 conn.execute(
                     """
-                    insert into contact_flow_state (contact_id, current_state)
-                    values (%s, 'awaiting_need_now')
+                    insert into contact_flow_state (
+                        contact_id,
+                        current_state,
+                        customer_existed_before_flow
+                    )
+                    values (%s, 'awaiting_need_now', %s)
                     on conflict (contact_id) do nothing
                     """,
-                    (contact["id"],),
+                    (contact["id"], contact_existed_before_flow),
                 )
         conversation = self.get(phone)
         if conversation is None:
@@ -108,6 +120,8 @@ class PostgresConversationRepository:
                         current_state,
                         is_closed,
                         printer_raw,
+                        printer_brand,
+                        printer_model,
                         toner_type,
                         toner_units,
                         sage_customer_exists,
@@ -125,6 +139,8 @@ class PostgresConversationRepository:
                         %(current_state)s,
                         %(is_closed)s,
                         %(printer_raw)s,
+                        %(printer_brand)s,
+                        %(printer_model)s,
                         %(toner_type)s,
                         %(toner_units)s,
                         %(sage_customer_exists)s,
@@ -141,6 +157,8 @@ class PostgresConversationRepository:
                         current_state = excluded.current_state,
                         is_closed = excluded.is_closed,
                         printer_raw = excluded.printer_raw,
+                        printer_brand = excluded.printer_brand,
+                        printer_model = excluded.printer_model,
                         toner_type = excluded.toner_type,
                         toner_units = excluded.toner_units,
                         sage_customer_exists = excluded.sage_customer_exists,
@@ -183,6 +201,8 @@ class PostgresConversationRepository:
                         current_state = 'awaiting_need_now',
                         is_closed = false,
                         printer_raw = null,
+                        printer_brand = null,
+                        printer_model = null,
                         toner_type = null,
                         toner_units = null,
                         sage_customer_exists = null,
@@ -219,6 +239,9 @@ class PostgresConversationRepository:
                     c.created_at as contact_created_at,
                     c.updated_at as contact_updated_at,
                     s.current_state,
+                    s.customer_existed_before_flow,
+                    s.printer_brand,
+                    s.printer_model,
                     s.printer_raw,
                     s.toner_type,
                     s.toner_units,
@@ -295,6 +318,8 @@ class PostgresConversationRepository:
             contact_id=row["contact_id"],
             current_state=current_state,
             tags=tags,
+            printer_brand=row["printer_brand"],
+            printer_model=row["printer_model"],
             printer_raw=row["printer_raw"],
             toner_type=row["toner_type"],
             toner_units=row["toner_units"],
@@ -331,6 +356,8 @@ class PostgresConversationRepository:
             "current_state": self._db_state(conversation.current_state),
             "is_closed": conversation.current_state.startswith("closed_"),
             "printer_raw": conversation.printer_raw,
+            "printer_brand": conversation.printer_brand,
+            "printer_model": conversation.printer_model,
             "toner_type": conversation.toner_type,
             "toner_units": conversation.toner_units,
             "sage_customer_exists": conversation.sage_customer_exists,
@@ -415,6 +442,142 @@ class PostgresConversationRepository:
                     item.timestamp,
                 ),
             )
+
+    def customer_exists(self, phone: str) -> bool:
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """
+                select
+                    c.email,
+                    c.default_address,
+                    s.customer_existed_before_flow
+                from contacts c
+                left join contact_flow_state s on s.contact_id = c.id
+                where c.phone = %s
+                """,
+                (phone,),
+            ).fetchone()
+            if row is None:
+                return False
+            return bool(row["email"] or row["default_address"] or row["customer_existed_before_flow"])
+
+    def upsert_toner_order(self, conversation: ConversationState) -> None:
+        if conversation.contact_id is None or not self._has_order_data(conversation):
+            return
+        with self.pool.connection() as conn:
+            with conn.transaction():
+                active_order = conn.execute(
+                    """
+                    select id
+                    from toner_orders
+                    where contact_id = %s
+                      and status in ('draft', 'pending_budget', 'confirmed', 'pickup_requested')
+                    order by updated_at desc
+                    limit 1
+                    """,
+                    (conversation.contact_id,),
+                ).fetchone()
+                payload = {
+                    "contact_id": conversation.contact_id,
+                    "phone": conversation.phone,
+                    "printer_brand": conversation.printer_brand,
+                    "printer_model": conversation.printer_model,
+                    "printer_raw": conversation.printer_raw,
+                    "toner_type": conversation.toner_type,
+                    "toner_units": conversation.toner_units,
+                    "customer_exists": conversation.sage_customer_exists,
+                    "delivery_address": conversation.delivery_address,
+                    "budget_email": conversation.budget_email,
+                    "status": self._order_status(conversation),
+                    "empty_pickup_requested": conversation.empty_pickup_requested,
+                    "empty_units": conversation.empty_units,
+                    "empty_type": conversation.empty_type,
+                    "pickup_slot_text": conversation.pickup_slot_text,
+                }
+                if active_order:
+                    payload["id"] = active_order["id"]
+                    conn.execute(
+                        """
+                        update toner_orders set
+                            phone = %(phone)s,
+                            printer_brand = %(printer_brand)s,
+                            printer_model = %(printer_model)s,
+                            printer_raw = %(printer_raw)s,
+                            toner_type = %(toner_type)s,
+                            toner_units = %(toner_units)s,
+                            customer_exists = %(customer_exists)s,
+                            delivery_address = %(delivery_address)s,
+                            budget_email = %(budget_email)s,
+                            status = %(status)s,
+                            empty_pickup_requested = %(empty_pickup_requested)s,
+                            empty_units = %(empty_units)s,
+                            empty_type = %(empty_type)s,
+                            pickup_slot_text = %(pickup_slot_text)s
+                        where id = %(id)s
+                        """,
+                        payload,
+                    )
+                    return
+                conn.execute(
+                    """
+                    insert into toner_orders (
+                        contact_id,
+                        phone,
+                        printer_brand,
+                        printer_model,
+                        printer_raw,
+                        toner_type,
+                        toner_units,
+                        customer_exists,
+                        delivery_address,
+                        budget_email,
+                        status,
+                        empty_pickup_requested,
+                        empty_units,
+                        empty_type,
+                        pickup_slot_text
+                    )
+                    values (
+                        %(contact_id)s,
+                        %(phone)s,
+                        %(printer_brand)s,
+                        %(printer_model)s,
+                        %(printer_raw)s,
+                        %(toner_type)s,
+                        %(toner_units)s,
+                        %(customer_exists)s,
+                        %(delivery_address)s,
+                        %(budget_email)s,
+                        %(status)s,
+                        %(empty_pickup_requested)s,
+                        %(empty_units)s,
+                        %(empty_type)s,
+                        %(pickup_slot_text)s
+                    )
+                    """,
+                    payload,
+                )
+
+    def _has_order_data(self, conversation: ConversationState) -> bool:
+        return any(
+            [
+                conversation.toner_units,
+                conversation.empty_pickup_requested,
+                conversation.empty_units,
+                conversation.pickup_slot_text,
+            ]
+        )
+
+    def _order_status(self, conversation: ConversationState) -> str:
+        if conversation.current_state.startswith("closed_"):
+            return "closed"
+        if conversation.sage_customer_exists is False:
+            return "pending_budget"
+        if conversation.empty_pickup_requested:
+            return "pickup_requested"
+        if conversation.toner_units:
+            return "confirmed"
+        return "draft"
 
 
 class PostgresJobRepository:
@@ -534,4 +697,3 @@ class PostgresProcessedEventRepository:
                 (provider, provider_event_id, event_type, payload_hash),
             ).fetchone()
             return row is not None
-

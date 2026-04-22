@@ -12,7 +12,6 @@ from app.services.container import (
     conversation_repository,
     job_repository,
     job_service,
-    sage_service,
 )
 
 
@@ -51,15 +50,4 @@ def run_jobs(payload: JobsRunRequest | None = None) -> JobsRunResponse:
     executed = job_service.run_jobs(mode=mode)
     return JobsRunResponse(executed_jobs=[job.to_dict() for job in executed])
 
-
-@router.post("/sage/{phone}/exists", response_model=DebugActionResponse)
-def force_sage_exists(phone: str) -> DebugActionResponse:
-    sage_service.set_exists(phone)
-    return DebugActionResponse(detail=f"SAGE forced to existing customer for {phone}")
-
-
-@router.post("/sage/{phone}/new", response_model=DebugActionResponse)
-def force_sage_new(phone: str) -> DebugActionResponse:
-    sage_service.set_new(phone)
-    return DebugActionResponse(detail=f"SAGE forced to new customer for {phone}")
 

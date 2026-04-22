@@ -35,6 +35,8 @@ class ConversationState:
     contact_id: int | None = None
     current_state: str = "new"
     tags: list[str] = field(default_factory=list)
+    printer_brand: str | None = None
+    printer_model: str | None = None
     printer_raw: str | None = None
     toner_type: str | None = None
     toner_units: int | None = None
@@ -91,6 +93,8 @@ class ConversationState:
             "contact_id": self.contact_id,
             "current_state": self.current_state,
             "tags": self.tags,
+            "printer_brand": self.printer_brand,
+            "printer_model": self.printer_model,
             "printer_raw": self.printer_raw,
             "toner_type": self.toner_type,
             "toner_units": self.toner_units,
@@ -129,6 +133,14 @@ class ScheduledJob:
             job_type="toner_reminder_email",
             phone=phone,
             run_at=utcnow() + timedelta(days=45),
+            payload={
+                "subject": "¿Necesitas tóner para tu impresora?",
+                "body": (
+                    "Hola, solo pasábamos a recordarte que podemos ayudarte con tóner original, "
+                    "compatible o ecológico Ábitat. Responde a este email o escríbenos por WhatsApp "
+                    "cuando lo necesites."
+                ),
+            },
         )
 
     def mark_executed(self) -> None:
