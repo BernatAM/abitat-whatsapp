@@ -18,6 +18,8 @@ class IncomingWhatsAppMessage:
     phone: str
     text: str
     raw: dict[str, Any]
+    message_id: str | None = None
+    conversation_id: str | None = None
 
 
 class WhatsAppCloudClient:
@@ -90,7 +92,8 @@ def parse_meta_webhook_messages(payload: dict[str, Any]) -> list[IncomingWhatsAp
                         phone=from_phone,
                         text=text_body,
                         raw=message,
+                        message_id=message.get("id"),
+                        conversation_id=(message.get("context") or {}).get("id"),
                     )
                 )
     return parsed_messages
-

@@ -46,3 +46,16 @@ class InMemoryJobRepository:
     def list_all(self) -> list[ScheduledJob]:
         return list(self.scheduled_jobs)
 
+    def mark_executed(self, job: ScheduledJob) -> None:
+        return None
+
+
+class NoopProcessedEventRepository:
+    def try_register(
+        self,
+        provider: str,
+        provider_event_id: str,
+        event_type: str | None,
+        payload: dict,
+    ) -> bool:
+        return True

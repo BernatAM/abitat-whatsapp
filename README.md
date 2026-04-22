@@ -1,13 +1,50 @@
+cd /home/ec2-user/abitat-whatsapp
+docker stop abitat-whatsapp-api
+docker rm abitat-whatsapp-api
+docker build -t abitat-whatsapp-api .
+docker run -d \
+  --name abitat-whatsapp-api \
+  --env-file .env \
+  -p 127.0.0.1:8000:8000 \
+  abitat-whatsapp-api
+
+
 # Abitat WhatsApp Demo Mock
 
 Backend en FastAPI para un flujo conversacional de WhatsApp orientado a venta de toner y recogida de cartuchos vacios.
 
-No usa base de datos, Redis ni colas. Todo el estado se guarda en memoria por telefono.
+En produccion usa Supabase mediante `SUPABASE_URL` y `SUPABASE_KEY`. Si no estan configuradas, usa memoria como fallback solo para desarrollo local.
 
 Puede funcionar de dos formas:
 
 - modo demo local usando `POST /demo/message`
 - modo real con `WhatsApp Cloud API` de Meta usando webhook y envio saliente por Graph API
+
+## Base de datos Supabase
+
+Ejecuta primero el script SQL de creacion en Supabase. La aplicacion espera estas tablas:
+
+- `contacts`
+- `contact_flow_state`
+- `messages`
+- `tags`
+- `contact_tags`
+- `scheduled_jobs`
+- `processed_events`
+
+Configura Supabase en `.env`:
+
+```env
+SUPABASE_URL=https://tckqfyydlpqokvpdqmge.supabase.co
+SUPABASE_KEY=tu_service_role_key
+```
+
+Recomendacion para Supabase:
+
+- Usa una key server-side. Idealmente `service_role` solo en el servidor.
+- No expongas `SUPABASE_KEY` en frontend.
+- No subas `.env` a Git.
+- Si usas Row Level Security, asegúrate de que la key del backend puede leer/escribir las tablas del flujo.
 
 ## Estructura
 
@@ -72,8 +109,10 @@ uvicorn app.main:app --reload
 
 ## Variables de entorno para WhatsApp real
 
-Necesitas estas variables para integrar con Meta:
+Necesitas estas variables para integrar Supabase y Meta:
 
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
 - `WHATSAPP_VERIFY_TOKEN`
 - `WHATSAPP_ACCESS_TOKEN`
 - `WHATSAPP_PHONE_NUMBER_ID`
@@ -82,6 +121,8 @@ Necesitas estas variables para integrar con Meta:
 Ejemplo:
 
 ```env
+SUPABASE_URL=https://tckqfyydlpqokvpdqmge.supabase.co
+SUPABASE_KEY=tu_service_role_key
 WHATSAPP_VERIFY_TOKEN=un_token_largo_y_privado
 WHATSAPP_ACCESS_TOKEN=EAAG...
 WHATSAPP_PHONE_NUMBER_ID=123456789012345
@@ -172,7 +213,7 @@ Cuando Meta envia un mensaje de texto entrante al webhook:
 
 - se extrae el telefono del cliente
 - se procesa el flujo conversacional
-- se guarda el estado en memoria
+- se guarda el contacto, estado, tags, mensajes y jobs en Supabase
 - cada respuesta generada se envia de vuelta por Graph API
 
 ### 5. Importante sobre la ventana de 24 horas
@@ -290,8 +331,9 @@ Cada conversacion guarda:
 ## Notas
 
 - Una conversacion por telefono.
-- Estado guardado en diccionarios y listas en memoria.
+- Estado productivo guardado en Supabase si `SUPABASE_URL` y `SUPABASE_KEY` estan configuradas.
+- Fallback en memoria solo para desarrollo local.
 - Historial con `timestamp`, `direction`, `text`, `state_before`, `state_after`.
 - Logs por mensaje recibido, transiciones, tags, resultado SAGE y jobs.
 - El webhook soporta payload simulado y payload real de Meta para mensajes de texto.
-- No hay persistencia. Al reiniciar el contenedor se pierde el estado, que es el comportamiento esperado para la demo.
+- Idempotencia basica para mensajes entrantes reales usando `processed_events`.

@@ -17,6 +17,11 @@ class HistoryItem:
     text: str
     state_before: str
     state_after: str
+    wa_message_id: str | None = None
+    wa_conversation_id: str | None = None
+    wa_status: str | None = None
+    message_type: str = "text"
+    raw_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -27,6 +32,7 @@ class HistoryItem:
 @dataclass
 class ConversationState:
     phone: str
+    contact_id: int | None = None
     current_state: str = "new"
     tags: list[str] = field(default_factory=list)
     printer_raw: str | None = None
@@ -42,6 +48,7 @@ class ConversationState:
     history: list[HistoryItem] = field(default_factory=list)
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
+    persisted_history_count: int = 0
 
     def add_tag(self, tag: str) -> bool:
         if tag in self.tags:
@@ -56,6 +63,11 @@ class ConversationState:
         text: str,
         state_before: str,
         state_after: str,
+        wa_message_id: str | None = None,
+        wa_conversation_id: str | None = None,
+        wa_status: str | None = None,
+        message_type: str = "text",
+        raw_payload: dict[str, Any] | None = None,
     ) -> None:
         self.history.append(
             HistoryItem(
@@ -64,6 +76,11 @@ class ConversationState:
                 text=text,
                 state_before=state_before,
                 state_after=state_after,
+                wa_message_id=wa_message_id,
+                wa_conversation_id=wa_conversation_id,
+                wa_status=wa_status,
+                message_type=message_type,
+                raw_payload=raw_payload,
             )
         )
         self.updated_at = utcnow()
@@ -71,6 +88,7 @@ class ConversationState:
     def to_dict(self) -> dict[str, Any]:
         return {
             "phone": self.phone,
+            "contact_id": self.contact_id,
             "current_state": self.current_state,
             "tags": self.tags,
             "printer_raw": self.printer_raw,
@@ -98,6 +116,10 @@ class ScheduledJob:
     payload: dict[str, Any] = field(default_factory=dict)
     executed: bool = False
     executed_at: datetime | None = None
+    status: str = "pending"
+    attempts: int = 0
+    max_attempts: int = 5
+    last_error: str | None = None
     created_at: datetime = field(default_factory=utcnow)
 
     @classmethod
@@ -121,7 +143,10 @@ class ScheduledJob:
             "run_at": self.run_at.isoformat(),
             "payload": self.payload,
             "executed": self.executed,
+            "status": self.status,
             "executed_at": self.executed_at.isoformat() if self.executed_at else None,
+            "attempts": self.attempts,
+            "max_attempts": self.max_attempts,
+            "last_error": self.last_error,
             "created_at": self.created_at.isoformat(),
         }
-

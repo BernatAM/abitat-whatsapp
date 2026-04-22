@@ -4,7 +4,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from app.domain.schemas import WebhookResponse, WhatsAppWebhookRequest
 from app.integrations.whatsapp import parse_meta_webhook_messages
-from app.services.container import conversation_service, settings, whatsapp_client
+from app.services.container import (
+    conversation_service,
+    processed_event_repository,
+    settings,
+    whatsapp_client,
+)
 
 
 router = APIRouter(prefix="/webhook", tags=["webhook"])
@@ -48,9 +53,22 @@ async def whatsapp_webhook(request: Request) -> WebhookResponse:
     all_replies: list[str] = []
 
     for incoming in incoming_messages:
+        if incoming.message_id:
+            registered = processed_event_repository.try_register(
+                provider="whatsapp_cloud_api",
+                provider_event_id=incoming.message_id,
+                event_type="message.text",
+                payload=incoming.raw,
+            )
+            if not registered:
+                logger.info("Ignoring duplicate WhatsApp webhook event message_id=%s", incoming.message_id)
+                continue
         conversation, replies = conversation_service.process_incoming_message(
             phone=incoming.phone,
             text=incoming.text,
+            wa_message_id=incoming.message_id,
+            wa_conversation_id=incoming.conversation_id,
+            raw_payload=incoming.raw,
         )
         current_phone = conversation.phone
         current_state = conversation.current_state

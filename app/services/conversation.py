@@ -4,7 +4,6 @@ import logging
 
 from app.domain.models import ConversationState
 from app.integrations.sage import SageMockService
-from app.repositories.memory import InMemoryConversationRepository
 from app.services.jobs import JobService
 from app.utils.parsing import (
     extract_email,
@@ -25,7 +24,7 @@ GREETING = "Hola 👋 ¿Necesitas tóner ahora mismo?"
 class ConversationService:
     def __init__(
         self,
-        conversation_repository: InMemoryConversationRepository,
+        conversation_repository,
         sage_service: SageMockService,
         job_service: JobService,
     ) -> None:
@@ -33,7 +32,14 @@ class ConversationService:
         self.sage_service = sage_service
         self.job_service = job_service
 
-    def process_incoming_message(self, phone: str, text: str) -> tuple[ConversationState, list[str]]:
+    def process_incoming_message(
+        self,
+        phone: str,
+        text: str,
+        wa_message_id: str | None = None,
+        wa_conversation_id: str | None = None,
+        raw_payload: dict | None = None,
+    ) -> tuple[ConversationState, list[str]]:
         conversation, created = self.conversation_repository.get_or_create(phone)
         normalized_text = normalize_whitespace(text)
         replies: list[str] = []
@@ -45,9 +51,14 @@ class ConversationService:
             text=normalized_text,
             state_before=initial_state,
             state_after=initial_state,
+            wa_message_id=wa_message_id,
+            wa_conversation_id=wa_conversation_id,
+            raw_payload=raw_payload,
         )
 
         if created or conversation.current_state == "new" or conversation.current_state.startswith("closed_"):
+            if conversation.current_state.startswith("closed_"):
+                self._clear_flow_data(conversation)
             self._send_reply(conversation, replies, GREETING, next_state="awaiting_need_now")
             self.conversation_repository.save(conversation)
             return conversation, replies
@@ -427,3 +438,16 @@ class ConversationService:
     def _add_tag(self, conversation: ConversationState, tag: str) -> None:
         if conversation.add_tag(tag):
             logger.info("Added tag phone=%s tag=%s", conversation.phone, tag)
+
+    def _clear_flow_data(self, conversation: ConversationState) -> None:
+        conversation.current_state = "new"
+        conversation.printer_raw = None
+        conversation.toner_type = None
+        conversation.toner_units = None
+        conversation.sage_customer_exists = None
+        conversation.delivery_address = None
+        conversation.budget_email = None
+        conversation.empty_pickup_requested = None
+        conversation.empty_units = None
+        conversation.empty_type = None
+        conversation.pickup_slot_text = None

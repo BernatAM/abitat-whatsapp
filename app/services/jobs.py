@@ -2,7 +2,6 @@ import logging
 
 from app.domain.models import ScheduledJob, utcnow
 from app.integrations.email import EmailMockService
-from app.repositories.memory import InMemoryJobRepository
 
 
 logger = logging.getLogger(__name__)
@@ -11,7 +10,7 @@ logger = logging.getLogger(__name__)
 class JobService:
     def __init__(
         self,
-        job_repository: InMemoryJobRepository,
+        job_repository,
         email_service: EmailMockService,
     ) -> None:
         self.job_repository = job_repository
@@ -40,6 +39,7 @@ class JobService:
             if job.job_type == "toner_reminder_email":
                 self.email_service.send_reminder(job.phone)
             job.mark_executed()
+            if hasattr(self.job_repository, "mark_executed"):
+                self.job_repository.mark_executed(job)
             executed.append(job)
         return executed
-
