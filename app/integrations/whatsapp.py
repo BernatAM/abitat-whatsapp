@@ -178,7 +178,7 @@ def extract_message_text(message: dict[str, Any]) -> str | None:
         interactive = message.get("interactive") or {}
         if interactive.get("type") == "button_reply":
             reply = interactive.get("button_reply") or {}
-            return reply.get("title") or reply.get("id")
+            return reply.get("id") or reply.get("title")
     return None
 
 

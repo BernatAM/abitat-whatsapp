@@ -1,4 +1,5 @@
 from app.integrations.email import EmailMockService
+from app.integrations.whatsapp import extract_message_text
 from app.repositories.memory import InMemoryConversationRepository, InMemoryJobRepository
 from app.services.conversation import (
     TEXT_4,
@@ -14,6 +15,7 @@ from app.services.conversation import (
     ConversationService,
 )
 from app.services.jobs import JobService
+from app.utils.parsing import normalize_toner_type
 
 
 def build_service() -> tuple[ConversationService, InMemoryConversationRepository, InMemoryJobRepository]:
@@ -83,3 +85,38 @@ def test_existing_customer_is_checked_from_database_repository() -> None:
     assert conversation.current_state == "awaiting_empty_pickup_existing_customer"
     assert replies == [TEXT_8, TEXT_9]
     assert repository.toner_orders_by_phone[phone]["customer_exists"] is True
+
+
+def test_interactive_button_reply_uses_stable_id_before_title() -> None:
+    message = {
+        "type": "interactive",
+        "interactive": {
+            "type": "button_reply",
+            "button_reply": {
+                "id": "TONER_TYPE_ECOLOGICO",
+                "title": "Ecológico Ábitat",
+            },
+        },
+    }
+
+    assert extract_message_text(message) == "TONER_TYPE_ECOLOGICO"
+
+
+def test_ecological_toner_button_variants_are_understood() -> None:
+    assert normalize_toner_type("TONER_TYPE_ECOLOGICO") == "ecologico"
+    assert normalize_toner_type("àbitat_toner_ecologico") == "ecologico"
+    assert normalize_toner_type("Ecológico Ábitat") == "ecologico"
+
+
+def test_ecological_toner_button_advances_conversation() -> None:
+    service, _, _ = build_service()
+    phone = "+34600000005"
+
+    for text in ["Hola", "Si", "HP", "LaserJet Pro"]:
+        service.process_incoming_message(phone, text)
+
+    conversation, replies = service.process_incoming_message(phone, "àbitat_toner_ecologico")
+
+    assert conversation.current_state == "awaiting_units"
+    assert conversation.toner_type == "ecologico"
+    assert replies == ["Perfecto. ¿Cuántas unidades necesitas?"]

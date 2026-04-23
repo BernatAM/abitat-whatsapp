@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 
 YES_WORDS = {
@@ -34,11 +35,16 @@ TONER_TYPE_MAP = {
     "ecologico habitat": "ecologico",
     "ecológico habitat": "ecologico",
     "ecológico ábitat": "ecologico",
+    "ecologico abitat": "ecologico",
+    "abitat toner ecologico": "ecologico",
     "original": "original",
     "compatible": "compatible",
     "toner_type_ecologico": "ecologico",
+    "toner type ecologico": "ecologico",
     "toner_type_original": "original",
+    "toner type original": "original",
     "toner_type_compatible": "compatible",
+    "toner type compatible": "compatible",
 }
 
 EMAIL_RE = re.compile(r"([A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})", re.IGNORECASE)
@@ -50,17 +56,10 @@ def normalize_whitespace(text: str) -> str:
 
 def normalize_key(text: str) -> str:
     cleaned = normalize_whitespace(text).lower()
-    replacements = {
-        "á": "a",
-        "é": "e",
-        "í": "i",
-        "ó": "o",
-        "ú": "u",
-        "ü": "u",
-    }
-    for source, target in replacements.items():
-        cleaned = cleaned.replace(source, target)
-    return cleaned
+    cleaned = unicodedata.normalize("NFKD", cleaned)
+    cleaned = "".join(char for char in cleaned if not unicodedata.combining(char))
+    cleaned = cleaned.replace("_", " ").replace("-", " ")
+    return normalize_whitespace(cleaned)
 
 
 def normalize_yes_no(text: str) -> str | None:
