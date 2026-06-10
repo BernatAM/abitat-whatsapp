@@ -28,11 +28,13 @@ alter table contact_flow_state
                 'awaiting_empty_units_new_customer',
                 'awaiting_empty_type_new_customer',
                 'awaiting_pickup_slot_new_customer',
+                'awaiting_order_confirmation',
                 'closed_no_need',
                 'closed_existing_without_pickup',
                 'closed_existing_with_pickup',
                 'closed_new_without_pickup',
-                'closed_new_with_pickup'
+                'closed_new_with_pickup',
+                'closed_unconfirmed'
             )
         );
 
@@ -59,6 +61,7 @@ create table if not exists toner_orders (
     empty_units integer null,
     empty_type text null,
     pickup_slot_text text null,
+    order_confirmed boolean not null default false,
 
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
@@ -86,6 +89,9 @@ create table if not exists toner_orders (
             status in ('draft', 'pending_budget', 'confirmed', 'pickup_requested', 'closed', 'cancelled')
         )
 );
+
+alter table toner_orders
+    add column if not exists order_confirmed boolean not null default false;
 
 create index if not exists idx_toner_orders_contact_id
     on toner_orders(contact_id);

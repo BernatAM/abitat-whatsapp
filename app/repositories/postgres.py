@@ -462,7 +462,7 @@ class PostgresConversationRepository:
             return bool(row["email"] or row["default_address"] or row["customer_existed_before_flow"])
 
     def upsert_toner_order(self, conversation: ConversationState) -> None:
-        if conversation.contact_id is None or not self._has_order_data(conversation):
+        if conversation.contact_id is None or not conversation.order_confirmed or not self._has_order_data(conversation):
             return
         with self.pool.connection() as conn:
             with conn.transaction():
@@ -493,6 +493,7 @@ class PostgresConversationRepository:
                     "empty_units": conversation.empty_units,
                     "empty_type": conversation.empty_type,
                     "pickup_slot_text": conversation.pickup_slot_text,
+                    "order_confirmed": conversation.order_confirmed,
                 }
                 if active_order:
                     payload["id"] = active_order["id"]
@@ -512,7 +513,8 @@ class PostgresConversationRepository:
                             empty_pickup_requested = %(empty_pickup_requested)s,
                             empty_units = %(empty_units)s,
                             empty_type = %(empty_type)s,
-                            pickup_slot_text = %(pickup_slot_text)s
+                            pickup_slot_text = %(pickup_slot_text)s,
+                            order_confirmed = %(order_confirmed)s
                         where id = %(id)s
                         """,
                         payload,
@@ -535,7 +537,8 @@ class PostgresConversationRepository:
                         empty_pickup_requested,
                         empty_units,
                         empty_type,
-                        pickup_slot_text
+                        pickup_slot_text,
+                        order_confirmed
                     )
                     values (
                         %(contact_id)s,
@@ -552,7 +555,8 @@ class PostgresConversationRepository:
                         %(empty_pickup_requested)s,
                         %(empty_units)s,
                         %(empty_type)s,
-                        %(pickup_slot_text)s
+                        %(pickup_slot_text)s,
+                        %(order_confirmed)s
                     )
                     """,
                     payload,

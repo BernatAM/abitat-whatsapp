@@ -1,6 +1,7 @@
 import logging
 
 from app.domain.models import ScheduledJob, utcnow
+from app.domain.models import ConversationState
 from app.integrations.email import EmailMockService
 
 
@@ -26,6 +27,13 @@ class JobService:
             job.run_at.isoformat(),
         )
         return job
+
+    def send_order_confirmed_email(self, conversation: ConversationState) -> None:
+        if hasattr(self.email_service, "send_order_confirmed"):
+            try:
+                self.email_service.send_order_confirmed(conversation)
+            except Exception:
+                logger.exception("Failed to send confirmed order email phone=%s", conversation.phone)
 
     def run_jobs(self, mode: str = "due") -> list[ScheduledJob]:
         now = utcnow()

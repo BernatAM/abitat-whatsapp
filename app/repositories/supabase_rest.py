@@ -387,7 +387,7 @@ class SupabaseConversationRepository:
         return bool(flow.get("customer_existed_before_flow"))
 
     def upsert_toner_order(self, conversation: ConversationState) -> None:
-        if conversation.contact_id is None or not self._has_order_data(conversation):
+        if conversation.contact_id is None or not conversation.order_confirmed or not self._has_order_data(conversation):
             return
         active_order = self._get_active_order(conversation.contact_id)
         payload = {
@@ -406,6 +406,7 @@ class SupabaseConversationRepository:
             "empty_units": conversation.empty_units,
             "empty_type": conversation.empty_type,
             "pickup_slot_text": conversation.pickup_slot_text,
+            "order_confirmed": conversation.order_confirmed,
         }
         if active_order:
             self.client.patch(

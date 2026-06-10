@@ -43,7 +43,7 @@ class InMemoryConversationRepository:
         self.existing_customer_phones.add(phone)
 
     def upsert_toner_order(self, conversation: ConversationState) -> None:
-        if not self._has_order_data(conversation):
+        if not conversation.order_confirmed or not self._has_order_data(conversation):
             return
         self.toner_orders_by_phone[conversation.phone] = {
             "phone": conversation.phone,
@@ -60,6 +60,7 @@ class InMemoryConversationRepository:
             "empty_units": conversation.empty_units,
             "empty_type": conversation.empty_type,
             "pickup_slot_text": conversation.pickup_slot_text,
+            "order_confirmed": conversation.order_confirmed,
         }
 
     def _has_order_data(self, conversation: ConversationState) -> bool:

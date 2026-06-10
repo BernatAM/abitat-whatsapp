@@ -1,4 +1,4 @@
-from app.integrations.email import EmailMockService
+from app.integrations.email import EmailMockService, SmtpEmailService
 from app.integrations.whatsapp import WhatsAppCloudClient
 from app.repositories.memory import (
     InMemoryConversationRepository,
@@ -46,10 +46,23 @@ else:
     job_repository = InMemoryJobRepository()
     processed_event_repository = NoopProcessedEventRepository()
 
-email_service = EmailMockService()
+if settings.smtp_host and settings.smtp_from_email and settings.smtp_to_email:
+    email_service = SmtpEmailService(
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_username,
+        password=settings.smtp_password,
+        from_email=settings.smtp_from_email,
+        to_email=settings.smtp_to_email,
+        use_tls=settings.smtp_use_tls,
+        use_ssl=settings.smtp_use_ssl,
+    )
+else:
+    email_service = EmailMockService()
 whatsapp_client = WhatsAppCloudClient(settings=settings)
 job_service = JobService(job_repository=job_repository, email_service=email_service)
 conversation_service = ConversationService(
     conversation_repository=conversation_repository,
     job_service=job_service,
+    customer_service_phone=settings.customer_service_phone,
 )

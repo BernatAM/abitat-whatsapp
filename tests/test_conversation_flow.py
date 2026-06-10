@@ -8,10 +8,12 @@ from app.services.conversation import (
     TEXT_8,
     TEXT_9,
     TEXT_14,
+    TEXT_CONFIRMATION_PROMPT,
     TEXT_17,
     TEXT_19,
     TEXT_20,
     TEXT_22,
+    TEXT_PICKUP_SLOT_RETRY,
     ConversationService,
 )
 from app.services.jobs import JobService
@@ -66,10 +68,24 @@ def test_initial_no_can_request_pickup_and_schedules_reminder() -> None:
     assert replies == [TEXT_22]
 
     conversation, replies = service.process_incoming_message(phone, "Martes mañana")
+    assert conversation.current_state == "awaiting_pickup_slot_no_need"
+    assert replies == [TEXT_PICKUP_SLOT_RETRY]
+
+    conversation, replies = service.process_incoming_message(phone, "31/12/2099 por la mañana")
+    assert conversation.current_state == "awaiting_order_confirmation"
+    assert replies[0].startswith("Resumen del pedido:")
+    assert TEXT_CONFIRMATION_PROMPT in replies[0]
+    assert repository.toner_orders_by_phone == {}
+
+    conversation, replies = service.process_incoming_message(phone, "Si")
     assert conversation.current_state == "closed_no_need"
     assert replies == [TEXT_14]
     assert len(jobs.list_all()) == 1
     assert repository.toner_orders_by_phone[phone]["empty_type"] == "compatible"
+    assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
+    email_service = service.job_service.email_service
+    assert len(email_service.order_emails) == 1
+    assert "Fecha/franja de recogida: 31/12/2099 por la mañana" in email_service.order_emails[0]["body"]
 
 
 def test_existing_customer_is_checked_from_database_repository() -> None:
@@ -84,7 +100,20 @@ def test_existing_customer_is_checked_from_database_repository() -> None:
     assert conversation.sage_customer_exists is True
     assert conversation.current_state == "awaiting_empty_pickup_existing_customer"
     assert replies == [TEXT_8, TEXT_9]
+    assert repository.toner_orders_by_phone == {}
+
+    conversation, replies = service.process_incoming_message(phone, "No")
+    assert conversation.current_state == "awaiting_order_confirmation"
+    assert replies[0].startswith("Resumen del pedido:")
+
+    conversation, replies = service.process_incoming_message(phone, "Si")
+    assert conversation.current_state == "closed_existing_without_pickup"
     assert repository.toner_orders_by_phone[phone]["customer_exists"] is True
+    assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
+    email_service = service.job_service.email_service
+    assert len(email_service.order_emails) == 1
+    assert "Marca impresora: Brother" in email_service.order_emails[0]["body"]
+    assert "Unidades de tóner: 2" in email_service.order_emails[0]["body"]
 
 
 def test_interactive_button_reply_uses_stable_id_before_title() -> None:

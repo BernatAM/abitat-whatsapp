@@ -47,6 +47,7 @@ class ConversationState:
     empty_units: int | None = None
     empty_type: str | None = None
     pickup_slot_text: str | None = None
+    order_confirmed: bool = False
     history: list[HistoryItem] = field(default_factory=list)
     created_at: datetime = field(default_factory=utcnow)
     updated_at: datetime = field(default_factory=utcnow)
@@ -105,6 +106,7 @@ class ConversationState:
             "empty_units": self.empty_units,
             "empty_type": self.empty_type,
             "pickup_slot_text": self.pickup_slot_text,
+            "order_confirmed": self.order_confirmed,
             "history": [item.to_dict() for item in self.history],
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),

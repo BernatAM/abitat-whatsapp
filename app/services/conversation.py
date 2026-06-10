@@ -7,6 +7,7 @@ from app.services.jobs import JobService
 from app.utils.parsing import (
     extract_email,
     extract_units,
+    has_valid_pickup_slot,
     normalize_toner_type,
     normalize_yes_no,
     normalize_whitespace,
@@ -28,7 +29,10 @@ TEXT_9 = "Antes de cerrar 😊 ¿Necesitas que te recojamos los cartuchos vacío
 TEXT_10 = "Perfecto. Quedamos pendientes. Gracias 🙌"
 TEXT_11 = "Genial. ¿Cuántas unidades de vacíos tienes para recoger?"
 TEXT_12 = "¿Qué tipo son? Opciones: Ecológico Ábitat / Original / Compatible"
-TEXT_13 = "Perfecto. ¿Qué día y en qué franja horaria te va bien la recogida?"
+TEXT_13 = (
+    "Perfecto. ¿Qué día te va bien la recogida? Indica día, mes y año junto con la franja horaria.\n"
+    "Ejemplos: 12/06/2026 por la mañana, 12 de junio de 2026 de 16:00 a 18:00."
+)
 TEXT_14 = "Perfecto 🙌 Queda registrada la recogida. Te confirmaremos por este canal si hubiera cualquier ajuste."
 TEXT_15 = (
     "Perfecto 🙌 Para prepararte el pedido necesito estos datos:\n"
@@ -43,16 +47,26 @@ TEXT_17 = "¿Quieres que te recojamos también los cartuchos vacíos? (Sí/No)"
 TEXT_18 = "Perfecto 🙌 Quedamos pendientes del presupuesto. Gracias."
 TEXT_19 = "Genial. ¿Cuántas unidades tienes para recoger?"
 TEXT_20 = "¿Son ecológicos Ábitat, originales o compatibles?"
-TEXT_21 = "Perfecto 🙌 La recogida de originales es gratuita.\n¿Qué día y en qué franja horaria te va bien?"
+TEXT_21 = (
+    "Perfecto 🙌 La recogida de originales es gratuita.\n"
+    "¿Qué día te va bien? Indica día, mes y año junto con la franja horaria.\n"
+    "Ejemplos: 12/06/2026 por la mañana, 12 de junio de 2026 de 16:00 a 18:00."
+)
 TEXT_22 = (
     "Perfecto 😊 Te informamos que la recogida de este tipo de vacíos tiene un coste. "
     "Te lo incluiremos en el presupuesto antes de confirmar.\n"
-    "¿Qué día y en qué franja horaria te va bien?"
+    "¿Qué día te va bien? Indica día, mes y año junto con la franja horaria.\n"
+    "Ejemplos: 12/06/2026 por la mañana, 12 de junio de 2026 de 16:00 a 18:00."
 )
 TEXT_23 = (
     "Perfecto 🙌 Queda registrada la recogida.\n"
     "Te contactaremos por teléfono/email para confirmar presupuesto, pago y entrega."
 )
+TEXT_PICKUP_SLOT_RETRY = (
+    "Para evitar errores necesito una fecha concreta y una franja horaria.\n"
+    "Por ejemplo: 12/06/2026 por la mañana o 12 de junio de 2026 de 16:00 a 18:00."
+)
+TEXT_CONFIRMATION_PROMPT = "Responde Sí para confirmar el pedido o No si quieres revisarlo con atención al cliente."
 
 
 class ConversationService:
@@ -60,9 +74,11 @@ class ConversationService:
         self,
         conversation_repository,
         job_service: JobService,
+        customer_service_phone: str = "900 000 000",
     ) -> None:
         self.conversation_repository = conversation_repository
         self.job_service = job_service
+        self.customer_service_phone = customer_service_phone
 
     def process_incoming_message(
         self,
@@ -97,16 +113,23 @@ class ConversationService:
 
         handler_name = f"_handle_{conversation.current_state}"
         handler = getattr(self, handler_name, self._handle_unknown_state)
+        if self._wants_customer_service(normalized_text):
+            self._send_customer_service_reply(conversation, replies, next_state=conversation.current_state)
+            self.conversation_repository.save(conversation)
+            return conversation, replies
+        was_order_confirmed = conversation.order_confirmed
         handler(conversation, normalized_text, replies)
         self._persist_order(conversation)
         self.conversation_repository.save(conversation)
+        if conversation.order_confirmed and not was_order_confirmed:
+            self.job_service.send_order_confirmed_email(conversation)
         return conversation, replies
 
     def _handle_unknown_state(self, conversation: ConversationState, _: str, replies: list[str]) -> None:
         self._send_reply(
             conversation,
             replies,
-            "Ha ocurrido una inconsistencia en la demo. Reinicia la conversación desde el endpoint debug.",
+            self._customer_service_text(),
             next_state=conversation.current_state,
         )
 
@@ -124,7 +147,7 @@ class ConversationService:
         self._send_reply(
             conversation,
             replies,
-            "No te he entendido del todo. ¿Necesitas tóner ahora mismo? Responde Sí o No.",
+            f"No te he entendido del todo. ¿Necesitas tóner ahora mismo? Responde Sí o No.\n\n{self._customer_service_text()}",
             next_state=conversation.current_state,
         )
 
@@ -147,7 +170,7 @@ class ConversationService:
         self._send_reply(
             conversation,
             replies,
-            "No te he entendido del todo. ¿Quieres que te recojamos también los cartuchos vacíos? Responde Sí o No.",
+            f"No te he entendido del todo. ¿Quieres que te recojamos también los cartuchos vacíos? Responde Sí o No.\n\n{self._customer_service_text()}",
             next_state=conversation.current_state,
         )
 
@@ -180,7 +203,7 @@ class ConversationService:
             self._send_reply(
                 conversation,
                 replies,
-                "No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?",
+                f"No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?\n\n{self._customer_service_text()}",
                 next_state=conversation.current_state,
             )
             return
@@ -199,9 +222,11 @@ class ConversationService:
         text: str,
         replies: list[str],
     ) -> None:
+        if not has_valid_pickup_slot(text):
+            self._send_reply(conversation, replies, TEXT_PICKUP_SLOT_RETRY, next_state=conversation.current_state)
+            return
         conversation.pickup_slot_text = text
-        self.job_service.schedule_reminder_45_days(conversation.phone)
-        self._send_reply(conversation, replies, TEXT_14, next_state="closed_no_need")
+        self._request_order_confirmation(conversation, replies)
 
     def _handle_awaiting_printer_brand(self, conversation: ConversationState, text: str, replies: list[str]) -> None:
         conversation.printer_brand = text
@@ -222,7 +247,7 @@ class ConversationService:
             self._send_reply(
                 conversation,
                 replies,
-                "No te he entendido del todo. ¿Prefieres tóner Ecológico Ábitat, Original o Compatible?",
+                f"No te he entendido del todo. ¿Prefieres tóner Ecológico Ábitat, Original o Compatible?\n\n{self._customer_service_text()}",
                 next_state=conversation.current_state,
             )
             return
@@ -260,7 +285,7 @@ class ConversationService:
         decision = normalize_yes_no(text)
         if decision == "no":
             conversation.empty_pickup_requested = False
-            self._send_reply(conversation, replies, TEXT_10, next_state="closed_existing_without_pickup")
+            self._request_order_confirmation(conversation, replies)
             return
         if decision == "yes":
             conversation.empty_pickup_requested = True
@@ -269,7 +294,7 @@ class ConversationService:
         self._send_reply(
             conversation,
             replies,
-            "No te he entendido del todo. ¿Necesitas que te recojamos los cartuchos vacíos? Responde Sí o No.",
+            f"No te he entendido del todo. ¿Necesitas que te recojamos los cartuchos vacíos? Responde Sí o No.\n\n{self._customer_service_text()}",
             next_state=conversation.current_state,
         )
 
@@ -302,7 +327,7 @@ class ConversationService:
             self._send_reply(
                 conversation,
                 replies,
-                "No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?",
+                f"No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?\n\n{self._customer_service_text()}",
                 next_state=conversation.current_state,
             )
             return
@@ -316,8 +341,11 @@ class ConversationService:
         text: str,
         replies: list[str],
     ) -> None:
+        if not has_valid_pickup_slot(text):
+            self._send_reply(conversation, replies, TEXT_PICKUP_SLOT_RETRY, next_state=conversation.current_state)
+            return
         conversation.pickup_slot_text = text
-        self._send_reply(conversation, replies, TEXT_14, next_state="closed_existing_with_pickup")
+        self._request_order_confirmation(conversation, replies)
 
     def _handle_awaiting_new_customer_data(self, conversation: ConversationState, text: str, replies: list[str]) -> None:
         email = extract_email(text)
@@ -362,7 +390,7 @@ class ConversationService:
         decision = normalize_yes_no(text)
         if decision == "no":
             conversation.empty_pickup_requested = False
-            self._send_reply(conversation, replies, TEXT_18, next_state="closed_new_without_pickup")
+            self._request_order_confirmation(conversation, replies)
             return
         if decision == "yes":
             conversation.empty_pickup_requested = True
@@ -371,7 +399,7 @@ class ConversationService:
         self._send_reply(
             conversation,
             replies,
-            "No te he entendido del todo. ¿Quieres que te recojamos también los cartuchos vacíos? Responde Sí o No.",
+            f"No te he entendido del todo. ¿Quieres que te recojamos también los cartuchos vacíos? Responde Sí o No.\n\n{self._customer_service_text()}",
             next_state=conversation.current_state,
         )
 
@@ -404,7 +432,7 @@ class ConversationService:
             self._send_reply(
                 conversation,
                 replies,
-                "No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?",
+                f"No te he entendido del todo. ¿Prefieres Ecológico Ábitat, Original o Compatible?\n\n{self._customer_service_text()}",
                 next_state=conversation.current_state,
             )
             return
@@ -423,8 +451,45 @@ class ConversationService:
         text: str,
         replies: list[str],
     ) -> None:
+        if not has_valid_pickup_slot(text):
+            self._send_reply(conversation, replies, TEXT_PICKUP_SLOT_RETRY, next_state=conversation.current_state)
+            return
         conversation.pickup_slot_text = text
-        self._send_reply(conversation, replies, TEXT_23, next_state="closed_new_with_pickup")
+        self._request_order_confirmation(conversation, replies)
+
+    def _handle_awaiting_order_confirmation(
+        self,
+        conversation: ConversationState,
+        text: str,
+        replies: list[str],
+    ) -> None:
+        decision = normalize_yes_no(text)
+        if decision == "yes":
+            conversation.order_confirmed = True
+            if not conversation.toner_units:
+                self.job_service.schedule_reminder_45_days(conversation.phone)
+            self._send_reply(
+                conversation,
+                replies,
+                self._final_text_for(conversation),
+                next_state=self._final_state_for(conversation),
+            )
+            return
+        if decision == "no":
+            conversation.order_confirmed = False
+            self._send_reply(
+                conversation,
+                replies,
+                f"No registramos el pedido. {self._customer_service_text()}",
+                next_state="closed_unconfirmed",
+            )
+            return
+        self._send_reply(
+            conversation,
+            replies,
+            f"No te he entendido del todo. {TEXT_CONFIRMATION_PROMPT}\n\n{self._customer_service_text()}",
+            next_state=conversation.current_state,
+        )
 
     def _send_reply(
         self,
@@ -468,6 +533,7 @@ class ConversationService:
         conversation.empty_units = None
         conversation.empty_type = None
         conversation.pickup_slot_text = None
+        conversation.order_confirmed = False
 
     def _customer_exists_in_database(self, conversation: ConversationState) -> bool:
         if hasattr(self.conversation_repository, "customer_exists"):
@@ -479,3 +545,74 @@ class ConversationService:
     def _persist_order(self, conversation: ConversationState) -> None:
         if hasattr(self.conversation_repository, "upsert_toner_order"):
             self.conversation_repository.upsert_toner_order(conversation)
+
+    def _request_order_confirmation(self, conversation: ConversationState, replies: list[str]) -> None:
+        conversation.order_confirmed = False
+        self._send_reply(
+            conversation,
+            replies,
+            f"{self._order_summary(conversation)}\n\n{TEXT_CONFIRMATION_PROMPT}",
+            next_state="awaiting_order_confirmation",
+        )
+
+    def _order_summary(self, conversation: ConversationState) -> str:
+        lines = ["Resumen del pedido:"]
+        if conversation.toner_units:
+            lines.append(f"- Impresora: {conversation.printer_raw or 'pendiente'}")
+            lines.append(f"- Tóner: {conversation.toner_type or 'pendiente'}")
+            lines.append(f"- Unidades de tóner: {conversation.toner_units}")
+        if conversation.sage_customer_exists is False:
+            lines.append(f"- Dirección: {conversation.delivery_address or 'pendiente'}")
+            lines.append(f"- Email presupuesto: {conversation.budget_email or 'pendiente'}")
+        if conversation.empty_pickup_requested:
+            lines.append("- Recogida de vacíos: Sí")
+            lines.append(f"- Unidades de vacíos: {conversation.empty_units or 'pendiente'}")
+            lines.append(f"- Tipo de vacíos: {conversation.empty_type or 'pendiente'}")
+            lines.append(f"- Fecha/franja recogida: {conversation.pickup_slot_text or 'pendiente'}")
+        else:
+            lines.append("- Recogida de vacíos: No")
+        return "\n".join(lines)
+
+    def _final_state_for(self, conversation: ConversationState) -> str:
+        if not conversation.toner_units:
+            return "closed_no_need"
+        if conversation.sage_customer_exists:
+            return "closed_existing_with_pickup" if conversation.empty_pickup_requested else "closed_existing_without_pickup"
+        return "closed_new_with_pickup" if conversation.empty_pickup_requested else "closed_new_without_pickup"
+
+    def _final_text_for(self, conversation: ConversationState) -> str:
+        if not conversation.toner_units:
+            return TEXT_14
+        if conversation.sage_customer_exists:
+            return TEXT_14 if conversation.empty_pickup_requested else TEXT_10
+        return TEXT_23 if conversation.empty_pickup_requested else TEXT_18
+
+    def _customer_service_text(self) -> str:
+        return f"Para cualquier otra consulta, puedes contactar con atención al cliente en el {self.customer_service_phone}."
+
+    def _send_customer_service_reply(
+        self,
+        conversation: ConversationState,
+        replies: list[str],
+        next_state: str,
+    ) -> None:
+        self._send_reply(conversation, replies, self._customer_service_text(), next_state=next_state)
+
+    def _wants_customer_service(self, text: str) -> bool:
+        value = normalize_whitespace(text).lower()
+        markers = [
+            "atencion al cliente",
+            "atención al cliente",
+            "telefono",
+            "teléfono",
+            "llamar",
+            "hablar con alguien",
+            "hablar con una persona",
+            "operador",
+            "otra cosa",
+            "otra consulta",
+            "reclamacion",
+            "reclamación",
+            "factura",
+        ]
+        return any(marker in value for marker in markers)
