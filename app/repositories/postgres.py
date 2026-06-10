@@ -324,7 +324,7 @@ class PostgresConversationRepository:
             toner_type=row["toner_type"],
             toner_units=row["toner_units"],
             sage_customer_exists=row["sage_customer_exists"],
-            delivery_address=row["delivery_address"],
+            delivery_address=row["delivery_address"] or row["default_address"],
             budget_email=row["budget_email"] or row["email"],
             empty_pickup_requested=row["empty_pickup_requested"],
             empty_units=row["empty_units"],

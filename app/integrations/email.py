@@ -70,17 +70,14 @@ class SmtpEmailService:
 
 
 def build_order_email_body(conversation: ConversationState) -> str:
-    final_state = _final_state_for(conversation)
     lines = [
         "Pedido confirmado desde WhatsApp",
         "",
         "Datos generales",
         f"- Teléfono WhatsApp: {conversation.phone}",
         f"- Contact ID: {_value(conversation.contact_id)}",
-        f"- Estado final previsto: {final_state}",
         f"- Pedido confirmado: {'Sí' if conversation.order_confirmed else 'No'}",
         f"- Cliente existente: {_bool_value(conversation.sage_customer_exists)}",
-        f"- Tags: {', '.join(conversation.tags) if conversation.tags else 'Sin tags'}",
         "",
         "Tóner",
         f"- Marca impresora: {_value(conversation.printer_brand)}",
@@ -98,25 +95,12 @@ def build_order_email_body(conversation: ConversationState) -> str:
         f"- Unidades de vacíos: {_value(conversation.empty_units)}",
         f"- Tipo de vacíos: {_value(conversation.empty_type)}",
         f"- Fecha/franja de recogida: {_value(conversation.pickup_slot_text)}",
-        "",
-        "Trazabilidad",
-        f"- Estado conversacional actual: {conversation.current_state}",
-        f"- Creado: {conversation.created_at.isoformat()}",
-        f"- Actualizado: {conversation.updated_at.isoformat()}",
     ]
     return "\n".join(lines)
 
 
 def _order_subject(conversation: ConversationState) -> str:
     return f"Pedido WhatsApp confirmado - {conversation.phone}"
-
-
-def _final_state_for(conversation: ConversationState) -> str:
-    if not conversation.toner_units:
-        return "closed_no_need"
-    if conversation.sage_customer_exists:
-        return "closed_existing_with_pickup" if conversation.empty_pickup_requested else "closed_existing_without_pickup"
-    return "closed_new_with_pickup" if conversation.empty_pickup_requested else "closed_new_without_pickup"
 
 
 def _value(value: object) -> str:

@@ -1,5 +1,6 @@
-from app.integrations.email import EmailMockService
-from app.integrations.whatsapp import extract_message_text
+from app.domain.models import ConversationState
+from app.integrations.email import EmailMockService, build_order_email_body
+from app.integrations.whatsapp import buttons_for_text, extract_message_text
 from app.repositories.memory import InMemoryConversationRepository, InMemoryJobRepository
 from app.services.conversation import (
     TEXT_4,
@@ -85,7 +86,11 @@ def test_initial_no_can_request_pickup_and_schedules_reminder() -> None:
     assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
     email_service = service.job_service.email_service
     assert len(email_service.order_emails) == 1
-    assert "Fecha/franja de recogida: 31/12/2099 por la mañana" in email_service.order_emails[0]["body"]
+    body = email_service.order_emails[0]["body"]
+    assert "Fecha/franja de recogida: 31/12/2099 por la mañana" in body
+    assert "Estado final previsto" not in body
+    assert "Tags:" not in body
+    assert "Trazabilidad" not in body
 
 
 def test_existing_customer_is_checked_from_database_repository() -> None:
@@ -112,8 +117,12 @@ def test_existing_customer_is_checked_from_database_repository() -> None:
     assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
     email_service = service.job_service.email_service
     assert len(email_service.order_emails) == 1
-    assert "Marca impresora: Brother" in email_service.order_emails[0]["body"]
-    assert "Unidades de tóner: 2" in email_service.order_emails[0]["body"]
+    body = email_service.order_emails[0]["body"]
+    assert "Marca impresora: Brother" in body
+    assert "Unidades de tóner: 2" in body
+    assert "Estado final previsto" not in body
+    assert "Tags:" not in body
+    assert "Trazabilidad" not in body
 
 
 def test_interactive_button_reply_uses_stable_id_before_title() -> None:
@@ -129,6 +138,48 @@ def test_interactive_button_reply_uses_stable_id_before_title() -> None:
     }
 
     assert extract_message_text(message) == "TONER_TYPE_ECOLOGICO"
+
+
+def test_order_confirmation_prompt_uses_yes_no_buttons() -> None:
+    buttons = buttons_for_text(
+        "Resumen del pedido:\n"
+        "- Impresora: HP LaserJet\n\n"
+        "Responde Sí para confirmar el pedido o No si quieres revisarlo con atención al cliente."
+    )
+
+    assert buttons == [
+        {"id": "YES", "title": "Sí"},
+        {"id": "NO", "title": "No"},
+    ]
+
+
+def test_order_email_body_contains_only_order_details() -> None:
+    body = build_order_email_body(
+        ConversationState(
+            phone="34657705038",
+            contact_id=2,
+            order_confirmed=True,
+            sage_customer_exists=True,
+            tags=["toner_yes_now"],
+            printer_brand="Epson",
+            printer_model="2500",
+            printer_raw="Epson 2500",
+            toner_type="ecologico",
+            toner_units=1,
+            delivery_address="Calle Mayor 1",
+            budget_email="test@test.com",
+            empty_pickup_requested=True,
+            empty_units=3,
+            empty_type="ecologico",
+            pickup_slot_text="12/06/2026 por la mañana",
+        )
+    )
+
+    assert "Dirección de entrega: Calle Mayor 1" in body
+    assert "Estado final previsto" not in body
+    assert "Tags:" not in body
+    assert "Trazabilidad" not in body
+    assert "Estado conversacional actual" not in body
 
 
 def test_ecological_toner_button_variants_are_understood() -> None:

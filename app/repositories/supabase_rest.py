@@ -278,7 +278,7 @@ class SupabaseConversationRepository:
             toner_type=flow.get("toner_type"),
             toner_units=flow.get("toner_units"),
             sage_customer_exists=flow.get("sage_customer_exists"),
-            delivery_address=flow.get("delivery_address"),
+            delivery_address=flow.get("delivery_address") or contact.get("default_address"),
             budget_email=flow.get("budget_email") or contact.get("email"),
             empty_pickup_requested=flow.get("empty_pickup_requested"),
             empty_units=flow.get("empty_units"),

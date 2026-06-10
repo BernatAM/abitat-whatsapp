@@ -195,6 +195,8 @@ TONER_TYPE_BUTTONS = [
 
 
 def buttons_for_text(text: str) -> list[dict[str, str]] | None:
+    if "Responde Sí para confirmar el pedido o No si quieres revisarlo con atención al cliente." in text:
+        return YES_NO_BUTTONS
     if text in {
         "Hola 👋 ¿Necesitas tóner ahora mismo?",
         "Antes de cerrar 😊 ¿Necesitas que te recojamos los cartuchos vacíos? (Sí/No)",
