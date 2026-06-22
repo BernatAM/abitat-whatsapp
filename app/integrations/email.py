@@ -94,7 +94,7 @@ def build_order_email_body(conversation: ConversationState) -> str:
         f"- Solicita recogida: {_bool_value(conversation.empty_pickup_requested)}",
         f"- Unidades de vacíos: {_value(conversation.empty_units)}",
         f"- Tipo de vacíos: {_value(conversation.empty_type)}",
-        f"- Fecha/franja de recogida: {_value(conversation.pickup_slot_text)}",
+        f"- Horario de recogida: {_value(conversation.pickup_slot_text)}",
     ]
     return "\n".join(lines)
 

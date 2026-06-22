@@ -14,7 +14,7 @@ from app.services.conversation import (
     TEXT_19,
     TEXT_20,
     TEXT_22,
-    TEXT_PICKUP_SLOT_RETRY,
+    TEXT_PICKUP_STANDARD,
     ConversationService,
 )
 from app.services.jobs import JobService
@@ -65,17 +65,12 @@ def test_initial_no_can_request_pickup_and_schedules_reminder() -> None:
     _, replies = service.process_incoming_message(phone, "Si")
     assert replies == [TEXT_19]
     service.process_incoming_message(phone, "3")
-    _, replies = service.process_incoming_message(phone, "Compatible")
-    assert replies == [TEXT_22]
-
-    conversation, replies = service.process_incoming_message(phone, "Martes mañana")
-    assert conversation.current_state == "awaiting_pickup_slot_no_need"
-    assert replies == [TEXT_PICKUP_SLOT_RETRY]
-
-    conversation, replies = service.process_incoming_message(phone, "31/12/2099 por la mañana")
+    conversation, replies = service.process_incoming_message(phone, "Compatible")
     assert conversation.current_state == "awaiting_order_confirmation"
-    assert replies[0].startswith("Resumen del pedido:")
-    assert TEXT_CONFIRMATION_PROMPT in replies[0]
+    assert replies[0] == TEXT_22
+    assert replies[1] == TEXT_PICKUP_STANDARD
+    assert replies[2].startswith("Resumen del pedido:")
+    assert TEXT_CONFIRMATION_PROMPT in replies[2]
     assert repository.toner_orders_by_phone == {}
 
     conversation, replies = service.process_incoming_message(phone, "Si")
@@ -87,7 +82,7 @@ def test_initial_no_can_request_pickup_and_schedules_reminder() -> None:
     email_service = service.job_service.email_service
     assert len(email_service.order_emails) == 1
     body = email_service.order_emails[0]["body"]
-    assert "Fecha/franja de recogida: 31/12/2099 por la mañana" in body
+    assert f"Horario de recogida: {TEXT_PICKUP_STANDARD}" in body
     assert "Estado final previsto" not in body
     assert "Tags:" not in body
     assert "Trazabilidad" not in body
@@ -123,6 +118,86 @@ def test_existing_customer_is_checked_from_database_repository() -> None:
     assert "Estado final previsto" not in body
     assert "Tags:" not in body
     assert "Trazabilidad" not in body
+
+
+def test_existing_customer_with_pickup_gets_order_confirmation_and_email() -> None:
+    service, repository, _ = build_service()
+    phone = "+34600000006"
+    repository.mark_customer_exists(phone)
+
+    for text in ["Hola", "Si", "Brother", "HL-L2375DW", "Original", "2", "Si", "3"]:
+        service.process_incoming_message(phone, text)
+
+    conversation, replies = service.process_incoming_message(phone, "Original")
+    assert conversation.current_state == "awaiting_order_confirmation"
+    assert replies[0] == TEXT_PICKUP_STANDARD
+    assert replies[1].startswith("Resumen del pedido:")
+    assert "- Recogida de vacíos: Sí" in replies[1]
+    assert TEXT_CONFIRMATION_PROMPT in replies[1]
+
+    conversation, replies = service.process_incoming_message(phone, "Si")
+    assert conversation.current_state == "closed_existing_with_pickup"
+    assert replies == [TEXT_14]
+    assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
+    assert len(service.job_service.email_service.order_emails) == 1
+
+
+def test_new_customer_without_pickup_gets_order_confirmation_and_email() -> None:
+    service, repository, _ = build_service()
+    phone = "+34600000007"
+
+    for text in [
+        "Hola",
+        "Si",
+        "HP",
+        "LaserJet Pro",
+        "Compatible",
+        "4",
+        "Calle Mayor 10, Madrid compras@cliente.es",
+    ]:
+        service.process_incoming_message(phone, text)
+
+    conversation, replies = service.process_incoming_message(phone, "No")
+    assert conversation.current_state == "awaiting_order_confirmation"
+    assert replies[0].startswith("Resumen del pedido:")
+    assert "- Recogida de vacíos: No" in replies[0]
+    assert TEXT_CONFIRMATION_PROMPT in replies[0]
+
+    conversation, replies = service.process_incoming_message(phone, "Si")
+    assert conversation.current_state == "closed_new_without_pickup"
+    assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
+    assert len(service.job_service.email_service.order_emails) == 1
+
+
+def test_new_customer_with_pickup_gets_standard_schedule_then_order_confirmation_and_email() -> None:
+    service, repository, _ = build_service()
+    phone = "+34600000008"
+
+    for text in [
+        "Hola",
+        "Si",
+        "HP",
+        "LaserJet Pro",
+        "Compatible",
+        "4",
+        "Calle Mayor 10, Madrid compras@cliente.es",
+        "Si",
+        "6",
+    ]:
+        service.process_incoming_message(phone, text)
+
+    conversation, replies = service.process_incoming_message(phone, "Compatible")
+    assert conversation.current_state == "awaiting_order_confirmation"
+    assert replies[0] == TEXT_22
+    assert replies[1] == TEXT_PICKUP_STANDARD
+    assert replies[2].startswith("Resumen del pedido:")
+    assert "- Horario de recogida: " + TEXT_PICKUP_STANDARD in replies[2]
+    assert TEXT_CONFIRMATION_PROMPT in replies[2]
+
+    conversation, replies = service.process_incoming_message(phone, "Si")
+    assert conversation.current_state == "closed_new_with_pickup"
+    assert repository.toner_orders_by_phone[phone]["order_confirmed"] is True
+    assert len(service.job_service.email_service.order_emails) == 1
 
 
 def test_interactive_button_reply_uses_stable_id_before_title() -> None:
@@ -171,11 +246,12 @@ def test_order_email_body_contains_only_order_details() -> None:
             empty_pickup_requested=True,
             empty_units=3,
             empty_type="ecologico",
-            pickup_slot_text="12/06/2026 por la mañana",
+            pickup_slot_text=TEXT_PICKUP_STANDARD,
         )
     )
 
     assert "Dirección de entrega: Calle Mayor 1" in body
+    assert f"Horario de recogida: {TEXT_PICKUP_STANDARD}" in body
     assert "Estado final previsto" not in body
     assert "Tags:" not in body
     assert "Trazabilidad" not in body

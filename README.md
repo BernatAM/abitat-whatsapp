@@ -231,7 +231,7 @@ curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/js
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"2"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Original"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Martes por la manana"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000000","text":"Si"}'
 ```
 
 ### Cliente nuevo con presupuesto y recogida
@@ -247,7 +247,7 @@ curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/js
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Si"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"6"}'
 curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Compatible"}'
-curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Jueves 16:00 a 18:00"}'
+curl -X POST http://localhost:8000/demo/message -H "Content-Type: application/json" -d '{"phone":"+34600000001","text":"Si"}'
 ```
 
 ### No necesito ahora
