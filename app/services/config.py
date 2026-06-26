@@ -35,7 +35,7 @@ class Settings:
             whatsapp_phone_number_id=phone_number_id,
             whatsapp_graph_version=os.getenv("WHATSAPP_GRAPH_VERSION", "v23.0"),
             whatsapp_send_enabled=bool(access_token and phone_number_id),
-            customer_service_phone=os.getenv("CUSTOMER_SERVICE_PHONE", "900 000 000"),
+            customer_service_phone=os.getenv("CUSTOMER_SERVICE_PHONE", "664 499 424"),
             smtp_host=os.getenv("SMTP_HOST"),
             smtp_port=int(os.getenv("SMTP_PORT", "587")),
             smtp_username=os.getenv("SMTP_USERNAME"),

@@ -228,6 +228,36 @@ def test_order_confirmation_prompt_uses_yes_no_buttons() -> None:
     ]
 
 
+def test_yes_no_retry_prompt_uses_buttons_and_updated_customer_service_phone() -> None:
+    service, _, _ = build_service()
+    phone = "+34600000009"
+
+    service.process_incoming_message(phone, "Hola")
+    _, replies = service.process_incoming_message(phone, "No entiendo")
+
+    assert replies == [
+        "No te he entendido del todo. ¿Necesitas tóner ahora mismo? Responde Sí o No.\n\n"
+        "Para cualquier otra consulta, puedes contactar con atención al cliente en el 664 499 424."
+    ]
+    assert buttons_for_text(replies[0]) == [
+        {"id": "YES", "title": "Sí"},
+        {"id": "NO", "title": "No"},
+    ]
+
+
+def test_toner_type_retry_prompt_uses_toner_type_buttons() -> None:
+    buttons = buttons_for_text(
+        "No te he entendido del todo. ¿Prefieres tóner Ecológico Ábitat, Original o Compatible?\n\n"
+        "Para cualquier otra consulta, puedes contactar con atención al cliente en el 664 499 424."
+    )
+
+    assert buttons == [
+        {"id": "TONER_TYPE_ECOLOGICO", "title": "Ecológico Ábitat"},
+        {"id": "TONER_TYPE_ORIGINAL", "title": "Original"},
+        {"id": "TONER_TYPE_COMPATIBLE", "title": "Compatible"},
+    ]
+
+
 def test_order_email_body_contains_only_order_details() -> None:
     body = build_order_email_body(
         ConversationState(

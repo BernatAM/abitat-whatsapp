@@ -61,7 +61,7 @@ class ConversationService:
         self,
         conversation_repository,
         job_service: JobService,
-        customer_service_phone: str = "900 000 000",
+        customer_service_phone: str = "664 499 424",
     ) -> None:
         self.conversation_repository = conversation_repository
         self.job_service = job_service

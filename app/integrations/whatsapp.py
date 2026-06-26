@@ -195,7 +195,12 @@ TONER_TYPE_BUTTONS = [
 
 
 def buttons_for_text(text: str) -> list[dict[str, str]] | None:
-    if "Responde Sí para confirmar el pedido o No si quieres revisarlo con atención al cliente." in text:
+    normalized_text = text.lower()
+    if (
+        "responde sí para confirmar el pedido o no si quieres revisarlo con atención al cliente." in normalized_text
+        or "responde sí o no" in normalized_text
+        or "(sí/no)" in normalized_text
+    ):
         return YES_NO_BUTTONS
     if text in {
         "Hola 👋 ¿Necesitas tóner ahora mismo?",
@@ -203,10 +208,6 @@ def buttons_for_text(text: str) -> list[dict[str, str]] | None:
         "¿Quieres que te recojamos también los cartuchos vacíos? (Sí/No)",
     }:
         return YES_NO_BUTTONS
-    if text in {
-        "Genial. ¿Qué tipo de tóner prefieres?\nOpciones: Ecológico Ábitat / Original / Compatible",
-        "¿Qué tipo son? Opciones: Ecológico Ábitat / Original / Compatible",
-        "¿Son ecológicos Ábitat, originales o compatibles?",
-    }:
+    if "ecológico ábitat" in normalized_text and "original" in normalized_text and "compatible" in normalized_text:
         return TONER_TYPE_BUTTONS
     return None
